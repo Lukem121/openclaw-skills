@@ -21,6 +21,17 @@ def normalize_domain(netloc: str) -> str:
     domain = netloc.lower()
     return DOMAIN_WWW_PREFIX.sub("", domain) or domain
 
+
+def ensure_scheme(url: str) -> str:
+    """Add https:// if URL has no scheme. Returns URL unchanged if scheme present."""
+    parsed = urlparse(url)
+    if parsed.scheme:
+        return url
+    if url.startswith("//"):
+        return "https:" + url
+    return "https://" + url
+
+
 DEFAULT_URL_PATTERNS = [
     "*contact*", "*support*", "*about*", "*team*",
     "*email*", "*reach*", "*staff*", "*inquiry*", "*enquir*",
@@ -185,9 +196,10 @@ def main() -> None:
         email_sources = extract_from_file(file_path)
     elif args.urls:
         url_patterns = load_url_patterns(script_dir)
+        urls = [ensure_scheme(u) for u in args.urls]
         try:
             email_sources = asyncio.run(crawl_and_extract(
-                urls=args.urls,
+                urls=urls,
                 url_patterns=url_patterns,
                 max_depth=args.max_depth,
                 max_pages=args.max_pages,
