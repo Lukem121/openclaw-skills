@@ -1,49 +1,17 @@
-# Crawl4AI Project
+# OpenClaw Skills
 
-Python project using [Crawl4AI](https://docs.crawl4ai.com/) for LLM-friendly web crawling and scraping.
+A collection of AI agent skills for Cursor and compatible agents. Each skill includes a `SKILL.md` that teaches the agent how to use it, plus scripts and config as needed.
 
-## Setup
+## Skills
 
-### 1. Create the Conda environment
+| Skill | Description |
+| ----- | ----------- |
+| [find-emails](find-emails/) | Crawl websites via crawl4ai hosted API to extract contact emails from pages (contact, about, support, etc.) |
 
-```bash
-conda env create -f environment.yml
-```
+## Usage
 
-### 2. Activate the environment
+Add the skill folder to your Cursor skills path (e.g. `~/.cursor/skills/` or `.cursor/skills/` in your project). Each skill is self-contained: read its `SKILL.md` for setup and usage.
 
-```bash
-conda activate crawl4ai
-```
+## Requirements
 
-### 3. Run the post-install setup
-
-Crawl4AI needs browser dependencies (Playwright). After activating:
-
-```bash
-crawl4ai-setup
-```
-
-### 4. (Optional) Run diagnostics
-
-If you hit any issues:
-
-```bash
-crawl4ai-doctor
-```
-
-## Quick test
-
-Run the example script to verify everything works:
-
-```bash
-python example_crawl.py
-```
-
-## Advanced features
-
-To add optional Crawl4AI extras (Torch, Transformers, etc.):
-
-- Torch: `pip install crawl4ai[torch]`
-- Transformers: `pip install crawl4ai[transformer]`
-- All: `pip install crawl4ai[all]` then `crawl4ai-download-models`
+Each skill documents its own dependencies. For example, find-emails requires `crawl4ai` and `httpx`; see [find-emails/SKILL.md](find-emails/SKILL.md) for details.
