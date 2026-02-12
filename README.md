@@ -22,4 +22,8 @@ Each skill documents its own dependencies. For example, find-emails requires `cr
 
 This project is sponsored by [Social Crow](https://www.socialcrow.co/).
 
-[![Social Crow](https://github.com/user-attachments/assets/5737a0b9-6fd1-481b-a29d-4727b1afb9b1)](https://www.socialcrow.co/)
+<p align="center">
+  <a href="https://www.socialcrow.co/">
+    <img src="https://github.com/user-attachments/assets/5737a0b9-6fd1-481b-a29d-4727b1afb9b1" alt="Social Crow" />
+  </a>
+</p>
