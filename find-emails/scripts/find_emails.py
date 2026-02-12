@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Crawl websites via crawl4ai hosted API and extract contact emails from relevant pages."""
+"""Crawl websites locally via crawl4ai and extract contact emails from relevant pages."""
 import argparse
 import asyncio
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -48,40 +47,47 @@ def extract_from_file(file_path: Path) -> dict[str, list[str]]:
 
 async def crawl_and_extract(
     urls: list[str],
-    api_base: str,
     url_patterns: list[str],
     max_depth: int,
     max_pages: int,
     verbose: bool,
 ) -> dict[str, list[str]]:
-    """Crawl URLs via crawl4ai hosted API and extract emails."""
-    from crawl4ai.docker_client import Crawl4aiDockerClient
-    from crawl4ai import BrowserConfig, CrawlerRunConfig, CacheMode
-    from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
+    """Crawl URLs locally via crawl4ai and extract emails."""
+    from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
+    from crawl4ai.deep_crawling import BestFirstCrawlingStrategy
     from crawl4ai.deep_crawling.filters import FilterChain, URLPatternFilter
+    from crawl4ai.deep_crawling.scorers import KeywordRelevanceScorer
 
-    async with Crawl4aiDockerClient(
-        base_url=api_base,
-        timeout=300.0,
-        verbose=verbose,
-    ) as client:
-        results = await client.crawl(
-            urls,
-            browser_config=BrowserConfig(headless=True),
-            crawler_config=CrawlerRunConfig(
-                cache_mode=CacheMode.BYPASS,
-                page_timeout=15_000,
-                deep_crawl_strategy=BFSDeepCrawlStrategy(
-                    max_depth=max_depth,
-                    include_external=False,
-                    max_pages=max_pages,
-                    filter_chain=FilterChain([
-                        URLPatternFilter(patterns=url_patterns),
-                    ]),
-                ),
-            ),
-            hooks_timeout=300,
-        )
+    # Prioritize pages likely to contain contact info (matches URL filter intent)
+    keyword_scorer = KeywordRelevanceScorer(
+        keywords=["contact", "support", "about", "team", "email", "reach", "staff", "inquiry", "enquiry"],
+        weight=0.7,
+    )
+
+    crawler_config = CrawlerRunConfig(
+        cache_mode=CacheMode.BYPASS,
+        page_timeout=15_000,
+        deep_crawl_strategy=BestFirstCrawlingStrategy(
+            max_depth=max_depth,
+            include_external=False,
+            max_pages=max_pages,
+            filter_chain=FilterChain([
+                URLPatternFilter(patterns=url_patterns),
+            ]),
+            url_scorer=keyword_scorer,
+        ),
+    )
+
+    browser_config = BrowserConfig(headless=True, verbose=verbose)
+    all_pages: list = []
+
+    async with AsyncWebCrawler(config=browser_config) as crawler:
+        for url in urls:
+            pages = await crawler.arun(url=url, config=crawler_config)
+            items = pages if isinstance(pages, list) else [pages]
+            all_pages.extend(items)
+
+    results = all_pages
 
     if not results:
         return {}
@@ -106,7 +112,7 @@ async def crawl_and_extract(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Crawl websites and extract contact emails via crawl4ai hosted API."
+        description="Crawl websites locally and extract contact emails via crawl4ai."
     )
     parser.add_argument(
         "urls",
@@ -140,12 +146,6 @@ def main() -> None:
         help="Max pages to crawl (default: 25)",
     )
     parser.add_argument(
-        "--api-base",
-        default=os.environ.get("CRAWL4AI_API_BASE"),
-        metavar="URL",
-        help="crawl4ai API base URL (pass as flag or set CRAWL4AI_API_BASE env var)",
-    )
-    parser.add_argument(
         "--from-file",
         metavar="FILE",
         help="Extract emails from local markdown file (skip crawl)",
@@ -166,18 +166,10 @@ def main() -> None:
             sys.exit(1)
         email_sources = extract_from_file(file_path)
     elif args.urls:
-        if not args.api_base:
-            print(
-                "Error: Set CRAWL4AI_API_BASE or pass --api-base <url>. "
-                "Get your crawl4ai hosted instance URL from your deployment.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
         url_patterns = load_url_patterns(script_dir)
         try:
             email_sources = asyncio.run(crawl_and_extract(
                 urls=args.urls,
-                api_base=args.api_base,
                 url_patterns=url_patterns,
                 max_depth=args.max_depth,
                 max_pages=args.max_pages,
