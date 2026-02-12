@@ -10,6 +10,17 @@ from urllib.parse import urlparse
 
 EMAIL_REGEX = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 
+# www. prefix stripped for canonical domain grouping (www.example.com === example.com)
+DOMAIN_WWW_PREFIX = re.compile(r"^www\.", re.IGNORECASE)
+
+
+def normalize_domain(netloc: str) -> str:
+    """Canonicalize domain for grouping: lowercase, strip www. prefix."""
+    if not netloc:
+        return "(unknown)"
+    domain = netloc.lower()
+    return DOMAIN_WWW_PREFIX.sub("", domain) or domain
+
 DEFAULT_URL_PATTERNS = [
     "*contact*", "*support*", "*about*", "*team*",
     "*email*", "*reach*", "*staff*", "*inquiry*", "*enquir*",
@@ -38,11 +49,12 @@ def extract_emails_from_text(text: str, path: str) -> dict[str, list[str]]:
     return {e: sorted(paths) for e, paths in email_sources.items()}
 
 
-def extract_from_file(file_path: Path) -> dict[str, list[str]]:
-    """Extract emails from a local markdown/text file."""
+def extract_from_file(file_path: Path) -> dict[str, dict[str, list[str]]]:
+    """Extract emails from a local markdown/text file. Returns {source: {email: [paths]}}."""
     text = file_path.read_text()
     path = str(file_path.name)
-    return extract_emails_from_text(text, path)
+    email_sources = extract_emails_from_text(text, path)
+    return {path: email_sources}
 
 
 async def crawl_and_extract(
@@ -51,8 +63,8 @@ async def crawl_and_extract(
     max_depth: int,
     max_pages: int,
     verbose: bool,
-) -> dict[str, list[str]]:
-    """Crawl URLs locally via crawl4ai and extract emails."""
+) -> dict[str, dict[str, list[str]]]:
+    """Crawl URLs locally via crawl4ai and extract emails. Returns {domain: {email: [paths]}}."""
     from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
     from crawl4ai.deep_crawling import BestFirstCrawlingStrategy
     from crawl4ai.deep_crawling.filters import FilterChain, URLPatternFilter
@@ -93,21 +105,27 @@ async def crawl_and_extract(
         return {}
 
     pages = results if isinstance(results, list) else [results]
-    combined: dict[str, set[str]] = {}
+    by_domain: dict[str, dict[str, set[str]]] = {}
 
     for result in pages:
         if result.success and result.markdown:
+            parsed = urlparse(result.url)
+            domain = normalize_domain(parsed.netloc or "")
+            path = parsed.path or "/"
             text = (
                 result.markdown.raw_markdown
                 if hasattr(result.markdown, "raw_markdown")
                 else str(result.markdown)
             )
-            path = urlparse(result.url).path or "/"
+            by_domain.setdefault(domain, {})
             for email in EMAIL_REGEX.findall(text):
                 key = email.lower()
-                combined.setdefault(key, set()).add(path)
+                by_domain[domain].setdefault(key, set()).add(path)
 
-    return {e: sorted(paths) for e, paths in combined.items()}
+    return {
+        domain: {e: sorted(paths) for e, paths in emails.items()}
+        for domain, emails in by_domain.items()
+    }
 
 
 def main() -> None:
@@ -181,18 +199,45 @@ def main() -> None:
     else:
         parser.error("Either provide URLs or use --from-file")
 
+    # Build domain-grouped output (email_sources: {domain: {email: [paths]}})
+    total_emails = sum(len(emails) for emails in email_sources.values())
+
     output_lines: list[str] = []
     if args.json:
-        output_lines.append(json.dumps({"emails": email_sources}, indent=2))
+        # LLM-friendly JSON: domains with nested email→paths
+        output_lines.append(json.dumps({
+            "summary": {
+                "domains_crawled": len(email_sources),
+                "total_unique_emails": total_emails,
+            },
+            "emails_by_domain": {
+                domain: {
+                    "emails": {
+                        email: paths
+                        for email, paths in sorted(emails.items())
+                    },
+                    "count": len(emails),
+                }
+                for domain, emails in sorted(email_sources.items())
+            },
+        }, indent=2))
     else:
         if not args.quiet:
-            output_lines.append(f"{len(email_sources)} emails found:")
-            output_lines.append("Format: email — path where the email was found")
-        for email in sorted(email_sources):
-            paths = ", ".join(sorted(email_sources[email]))
-            output_lines.append(f"{email} - {paths}")
+            output_lines.append(f"Found {total_emails} unique email(s) across {len(email_sources)} domain(s)")
+            output_lines.append("")
+        for domain in sorted(email_sources):
+            emails = email_sources[domain]
+            output_lines.append(f"## {domain}")
+            output_lines.append("")
+            for email in sorted(emails):
+                paths = emails[email]
+                paths_str = ", ".join(sorted(paths)) if paths else "(page)"
+                output_lines.append(f"  • {email}")
+                if paths and (len(paths) > 1 or paths[0] != "/"):
+                    output_lines.append(f"    Found on: {paths_str}")
+            output_lines.append("")
 
-    out_text = "\n".join(output_lines)
+    out_text = "\n".join(output_lines).rstrip()
     if args.output:
         Path(args.output).write_text(out_text)
         if not args.quiet:

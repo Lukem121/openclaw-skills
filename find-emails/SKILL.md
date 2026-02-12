@@ -1,6 +1,6 @@
 ---
 name: find-emails
-description: Crawl websites locally with crawl4ai to extract contact emails. Uses deep crawling with URL filters (contact, about, support) to find emails on relevant pages. Use when extracting emails from websites, finding contact information, or crawling for email addresses.
+description: Crawl websites locally with crawl4ai to extract contact emails. Accepts multiple URLs and outputs domain-grouped results for clear attribution. Uses deep crawling with URL filters (contact, about, support) to find emails on relevant pages. Use when extracting emails from websites, finding contact information, or crawling for email addresses.
 allowed-tools:
   - Read
   - Write
@@ -23,7 +23,7 @@ python scripts/find_emails.py https://example.com
 ```
 
 ## Quick Start
-
+t
 ```bash
 # Crawl a site
 python scripts/find_emails.py https://example.com
@@ -66,20 +66,48 @@ python scripts/find_emails.py --from-file page.md
 
 **Output format (human-readable):**
 
+Emails are grouped by domain. Clear structure for multi-URL runs:
+
 ```
-N emails found:
-Format: email — path where the email was found
-contact@example.com - /contact, /about
-support@example.com - /support
+Found 3 unique email(s) across 2 domain(s)
+
+## example.com
+
+  • contact@example.com
+    Found on: /contact, /about
+  • support@example.com
+    Found on: /support
+
+## other.com
+
+  • info@other.com
+    Found on: /contact-us
 ```
 
 **Output format (JSON):**
 
+LLM-friendly structure with summary and per-domain breakdown:
+
 ```json
 {
-  "emails": {
-    "contact@example.com": ["/contact", "/about"],
-    "support@example.com": ["/support"]
+  "summary": {
+    "domains_crawled": 2,
+    "total_unique_emails": 3
+  },
+  "emails_by_domain": {
+    "example.com": {
+      "emails": {
+        "contact@example.com": ["/contact", "/about"],
+        "support@example.com": ["/support"]
+      },
+      "count": 2
+    },
+    "other.com": {
+      "emails": {
+        "info@other.com": ["/contact-us"]
+      },
+      "count": 1
+    }
   }
 }
 ```
@@ -145,7 +173,7 @@ Requires a browser (Playwright) for local crawling.
 ## Batch Processing
 
 ```bash
-# Crawl multiple sites
+# Crawl multiple sites – results grouped by domain for clear attribution
 python scripts/find_emails.py https://site1.com https://site2.com -j -o combined.json
 
 # Extract from multiple local files
@@ -154,3 +182,5 @@ for f in crawled/*.md; do
   python scripts/find_emails.py --from-file "$f" -q
 done
 ```
+
+Multiple URLs are fully supported; output clearly associates each email with its source domain. Domains are normalized (e.g. `www.techbullion.com` and `techbullion.com` merge into one) so duplicate sites are not listed separately.
